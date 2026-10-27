@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>熱男を溝に落とさないゲーム</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+        #gameContainer {
+            position: relative;
+            width: 360px;
+            height: 600px;
+            background-color: #333;
+            box-shadow: 0 0 25px rgba(0,0,0,0.9);
+            border-left: 25px solid #1a1a1a;
+            border-right: 25px solid #1a1a1a;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            pointer-events: none;
+            text-shadow: 1px 1px 3px black;
+        }
+        #statusDisplay {
+            color: #ffeb3b;
+            font-size: 14px;
+            margin-top: 4px;
+        }
+        #itemUI {
+            position: absolute;
+            bottom: 15px;
+            right: 10px;
+            text-align: right;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid #555;
+        }
+        #currentItemDisplay {
+            margin-bottom: 6px;
+            font-weight: bold;
+            font-size: 13px;
+        }
+        #itemButton {
+            padding: 8px 14px;
+            font-size: 15px;
+            font-weight: bold;
+            background-color: #ff4500;
+            color: white;
+            border: 2px solid white;
+            border-radius: 5px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+            transition: 0.1s;
+        }
+        #itemButton:active:not(:disabled) {
+            transform: translateY(2px);
+        }
+        #itemButton:disabled {
+            background-color: #555;
+            border-color: #888;
+            cursor: not-allowed;
+            color: #aaa;
+        }
+        
+        /* モーダル・オーバーレイ共通 */
+        .overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.88);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .btn {
+            margin-top: 15px;
+            padding: 12px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            background-color: #ff4500;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(255, 69, 0, 0.4);
+        }
+        .btn:hover { background-color: #ff5722; }
+
+        /* カウントダウン表示 */
+        #countDownText {
+            font-size: 80px;
+            font-weight: bold;
+            color: #ffeb3b;
+            text-shadow: 0 0 20px #ff9800;
+        }
+
+        /* ゲームオーバー表示 */
+        #gameOverText {
+            font-size: 42px;
+            font-weight: 900;
+            color: #ff1744;
+            text-shadow: 0 0 15px rgba(255, 23, 68, 0.8);
+            margin-bottom: 5px;
+            animation: shake 0.5s ease-in-out;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-10px); }
+            40%, 80% { transform: translateX(10px); }
+        }
+
+        /* チュートリアル */
+        .tutorial-box {
+            background: #222;
+            border: 2px solid #ff4500;
+            border-radius: 10px;
+            padding: 15px;
+            color: #eee;
+            font-size: 14px;
+            line-height: 1.6;
+            text-align: left;
+        }
+        .tutorial-box h3 { color: #ffeb3b; margin-top: 0; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <canvas id="gameCanvas" width="310" height="600"></canvas>
+    
+    <div id="ui">
+        <div>生存時間: <span id="timeDisplay">0</span> 秒</div>
+        <div id="statusDisplay"></div>
+    </div>
+    
+    <div id="itemUI">
+        <div id="currentItemDisplay">アイテム: なし</div>
+        <button id="itemButton" disabled>アイテムを使う</button>
+    </div>
+
+    <!-- スタート画面 -->
+    <div id="startUI" class="overlay">
+        <h2 style="color: #ff4500; margin-bottom: 5px;">熱男を溝に落とさないゲーム</h2>
+        <p style="font-size: 13px; color: #ccc;">熱き男・熱男の挑戦が始まる！</p>
+        <button class="btn" onclick="onStartButtonClicked()">ゲーム開始</button>
+    </div>
+
+    <!-- カウントダウン画面 -->
+    <div id="countDownUI" class="overlay" style="display: none;">
+        <div id="countDownText">3</div>
+    </div>
+
+    <!-- チュートリアル画面 -->
+    <div id="tutorialUI" class="overlay" style="display: none;">
+        <div class="tutorial-box">
+            <h3>🔰 遊び方チュートリアル</h3>
+            <p>1. 画面の左右タップや「←」「→」キーで<b>熱男</b>を動かします。</p>
+            <p>2. 道路の両端にある<b>【赤と黄色の警戒境界線】</b>を超えて溝に落ちたらゲームオーバー！</p>
+            <p>3. 5秒ごとに上から流れてくる<b>【アイテム】</b>に触れてGETしましょう！</p>
+            <p>4. アイテムは右下のボタンで発動できます（使用後5秒クールダウン）。</p>
+        </div>
+        <button class="btn" onclick="closeTutorial()">了解！スタートへ</button>
+    </div>
+
+    <!-- ゲームオーバー画面 -->
+    <div id="gameOverUI" class="overlay" style="display: none;">
+        <div id="gameOverText">ゲームオーバー</div>
+        <h3 style="margin: 10px 0 0 0; color: #aaa;">熱男、溝に散る...</h3>
+        <p style="font-size: 20px; margin: 15px 0;">記録: <span id="resultTime" style="color:#ffeb3b; font-weight:bold;">0</span> 秒</p>
+        <button class="btn" onclick="onStartButtonClicked()">もう一度プレイ</button>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// UI要素
+const timeDisplay = document.getElementById('timeDisplay');
+const statusDisplay = document.getElementById('statusDisplay');
+const currentItemDisplay = document.getElementById('currentItemDisplay');
+const itemButton = document.getElementById('itemButton');
+const startUI = document.getElementById('startUI');
+const countDownUI = document.getElementById('countDownUI');
+const countDownText = document.getElementById('countDownText');
+const tutorialUI = document.getElementById('tutorialUI');
+const gameOverUI = document.getElementById('gameOverUI');
+const resultTime = document.getElementById('resultTime');
+
+// Web Audio API Sound Generator
+let audioCtx = null;
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+}
+
+// レース風カウントダウン音
+function playBeep(freq, duration, type='sine') {
+    if (!audioCtx) return;
+    try {
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    } catch(e){}
+}
+
+// 悲しい音楽（ゲームオーバー用効果音）
+function playSadSound() {
+    if (!audioCtx) return;
+    const notes = [440, 415.30, 392, 369.99]; // A4 -> G#4 -> G4 -> F#4 哀愁の降下音
+    notes.forEach((freq, idx) => {
+        setTimeout(() => {
+            try {
+                let osc = audioCtx.createOscillator();
+                let gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.6);
+            } catch(e){}
+        }, idx * 400);
+    });
+}
+
+// ゲーム設定
+const itemsList = ['ハイエース', 'りんご', 'パソコン'];
+
+// 変数
+let reqId;
+let frames = 0;
+let startTime = 0;
+let gameTime = 0;
+let isGameOver = false;
+let isPlaying = false;
+
+let baseSpeed = 4;
+let currentSpeed = baseSpeed;
+let bgOffsetY = 0;
+
+let currentItem = null;
+let lastItemUseTime = 0; // 5秒のクールダウン用
+let invincibleEndTime = 0;
+let hiaceEndTime = 0;
+
+let obstacles = [];
+let fieldItems = []; // 道路上を流れるアイテム
+
+// プレイヤー（熱男）
+let player = {
+    x: 135, y: 480,
+    normalW: 40, normalH: 50,
+    width: 40, height: 50,
+    speed: 6,
+    breakCount: 0
+};
+
+// 入力管理
+const keys = { ArrowLeft: false, ArrowRight: false, a: false, d: false };
+document.addEventListener('keydown', e => { if (keys.hasOwnProperty(e.key)) keys[e.key] = true; });
+document.addEventListener('keyup', e => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+
+let pointerX = null;
+canvas.addEventListener('pointerdown', e => { pointerX = e.offsetX; });
+canvas.addEventListener('pointermove', e => { if (pointerX !== null) pointerX = e.offsetX; });
+canvas.addEventListener('pointerup', () => { pointerX = null; });
+canvas.addEventListener('pointerleave', () => { pointerX = null; });
+
+// ボタンクリック
+itemButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!currentItem || isGameOver || !isPlaying) return;
+    useItem();
+});
+
+// 起動時の初期化（初回チュートリアルチェック）
+window.onload = () => {
+    let hasSeenTutorial = localStorage.getItem('atsuo_tutorial_done');
+    if (!hasSeenTutorial) {
+        startUI.style.display = 'none';
+        tutorialUI.style.display = 'flex';
+    }
+};
+
+function closeTutorial() {
+    localStorage.setItem('atsuo_tutorial_done', 'true');
+    tutorialUI.style.display = 'none';
+    startUI.style.display = 'flex';
+}
+
+function onStartButtonClicked() {
+    initAudio();
+    startUI.style.display = 'none';
+    gameOverUI.style.display = 'none';
+    startCountDown();
+}
+
+// 3秒カウントダウン
+function startCountDown() {
+    countDownUI.style.display = 'flex';
+    let count = 3;
+    countDownText.innerText = count;
+    playBeep(440, 0.3); // 低めのピ
+
+    let timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+            countDownText.innerText = count;
+            playBeep(440, 0.3);
+        } else if (count === 0) {
+            countDownText.innerText = "GO!";
+            playBeep(880, 0.6, 'triangle'); // 判定直前の高音ピー
+        } else {
+            clearInterval(timer);
+            countDownUI.style.display = 'none';
+            initGame();
+        }
+    }, 1000);
+}
+
+// ゲーム本編初期化
+function initGame() {
+    isGameOver = false;
+    isPlaying = true;
+    frames = 0;
+    startTime = Date.now();
+    lastItemUseTime = 0;
+    obstacles = [];
+    fieldItems = [];
+    currentItem = null;
+    invincibleEndTime = 0;
+    hiaceEndTime = 0;
+    currentSpeed = baseSpeed;
+    
+    player.width = player.normalW;
+    player.height = player.normalH;
+    player.x = canvas.width / 2 - player.width / 2;
+    player.breakCount = 0;
+
+    updateItemUI();
+    
+    if (reqId) cancelAnimationFrame(reqId);
+    gameLoop();
+}
+
+// アイテム使用
+function useItem() {
+    let now = Date.now();
+    if (now - lastItemUseTime < 5000) return; // 5秒間に一回制限
+
+    lastItemUseTime = now;
+    
+    if (currentItem === 'ハイエース') {
+        hiaceEndTime = now + 5000;
+        invincibleEndTime = Math.max(invincibleEndTime, now + 5000);
+    } 
+    else if (currentItem === 'りんご') {
+        player.breakCount = 2;
+        let cx = player.x + player.width / 2;
+        let cy = player.y + player.height / 2;
+        player.width = player.normalW * 1.8;
+        player.height = player.normalH * 1.8;
+        player.x = cx - player.width / 2;
+        player.y = cy - player.height / 2;
+    } 
+    else if (currentItem === 'パソコン') {
+        invincibleEndTime = Math.max(invincibleEndTime, now + 5000);
+    }
+    
+    currentItem = null;
+    updateItemUI();
+}
+
+function shrinkPlayer() {
+    let cx = player.x + player.width / 2;
+    let cy = player.y + player.height / 2;
+    player.width = player.normalW;
+    player.height = player.normalH;
+    player.x = cx - player.width / 2;
+    player.y = cy - player.height / 2;
+}
+
+function updateItemUI() {
+    let now = Date.now();
+    let cooldownLeft = Math.ceil((5000 - (now - lastItemUseTime)) / 1000);
+
+    if (currentItem) {
+        if (cooldownLeft > 0) {
+            currentItemDisplay.innerText = `持物: ${currentItem}`;
+            itemButton.disabled = true;
+            itemButton.innerText = `待機中 (${cooldownLeft}s)`;
+        } else {
+            currentItemDisplay.innerText = `持物: ${currentItem}`;
+            itemButton.disabled = false;
+            itemButton.innerText = `アイテムを使う`;
+        }
+    } else {
+        currentItemDisplay.innerText = `持物: なし`;
+        itemButton.disabled = true;
+        itemButton.innerText = `アイテムを使う`;
+    }
+}
+
+// ゲームループ
+function gameLoop() {
+    if (isGameOver) return;
+    
+    update();
+    draw();
+    
+    reqId = requestAnimationFrame(gameLoop);
+}
+
+function update() {
+    frames++;
+    let now = Date.now();
+    gameTime = Math.floor((now - startTime) / 1000);
+    
+    timeDisplay.innerText = gameTime;
+    updateItemUI();
+
+    // ステータス表示
+    let statusTexts = [];
+    if (now < hiaceEndTime) {
+        currentSpeed = baseSpeed * 2.2;
+        statusTexts.push("🚗ハイエース超爆走！");
+    } else {
+        currentSpeed = baseSpeed;
+    }
+
+    let isInvincible = false;
+    if (now < invincibleEndTime) {
+        isInvincible = true;
+        statusTexts.push("⭐無敵状態！");
+    }
+    if (player.breakCount > 0) {
+        statusTexts.push(`🍎巨大化 (破壊残:${player.breakCount})`);
+    }
+    statusDisplay.innerText = statusTexts.join(" ");
+
+    // 移動処理
+    if (keys.ArrowLeft || keys.a) player.x -= player.speed;
+    if (keys.ArrowRight || keys.d) player.x += player.speed;
+    
+    if (pointerX !== null) {
+        let centerX = player.x + player.width / 2;
+        if (Math.abs(pointerX - centerX) > player.speed) {
+            if (pointerX < centerX) player.x -= player.speed;
+            else player.x += player.speed;
+        }
+    }
+
+    // --- 溝判定（境界線から出たら判定）---
+    const leftBorder = 15;
+    const rightBorder = canvas.width - 15;
+    if (player.x < leftBorder || player.x + player.width > rightBorder) {
+        gameOver();
+        return;
+    }
+
+    // --- 障害物の生成 ---
+    if (frames % 45 === 0) {
+        let w = Math.random() * 35 + 35;
+        let h = 30;
+        let x = leftBorder + Math.random() * (rightBorder - leftBorder - w);
+        obstacles.push({ x: x, y: -h, w: w, h: h });
+    }
+
+    // --- 5秒に一度アイテムが流れてくる ---
+    if (frames % 300 === 0) {
+        let name = itemsList[Math.floor(Math.random() * itemsList.length)];
+        let x = leftBorder + Math.random() * (rightBorder - leftBorder - 30);
+        fieldItems.push({ x: x, y: -30, w: 30, h: 30, name: name });
+    }
+
+    // アイテムの移動と熱男の取得判定
+    for (let i = 0; i < fieldItems.length; i++) {
+        let item = fieldItems[i];
+        item.y += currentSpeed;
+
+        if (
+            player.x < item.x + item.w &&
+            player.x + player.width > item.x &&
+            player.y < item.y + item.h &&
+            player.y + player.height > item.y
+        ) {
+            currentItem = item.name; // 最新アイテムで上書き
+            playBeep(600, 0.15); // キャッチ音
+            fieldItems.splice(i, 1);
+            i--;
+            updateItemUI();
+        }
+    }
+    fieldItems = fieldItems.filter(item => item.y < canvas.height);
+
+    // 障害物の移動と衝突判定
+    for (let i = 0; i < obstacles.length; i++) {
+        let obs = obstacles[i];
+        obs.y += currentSpeed;
+
+        if (
+            player.x < obs.x + obs.w &&
+            player.x + player.width > obs.x &&
+            player.y < obs.y + obs.h &&
+            player.y + player.height > obs.y
+        ) {
+            if (isInvincible) {
+                obstacles.splice(i, 1);
+                i--;
+            } else if (player.breakCount > 0) {
+                obstacles.splice(i, 1);
+                i--;
+                player.breakCount--;
+                if (player.breakCount <= 0) shrinkPlayer();
+            } else {
+                gameOver();
+                return;
+            }
+        }
+    }
+    obstacles = obstacles.filter(obs => obs.y < canvas.height);
+}
+
+function draw() {
+    // 道路
+    ctx.fillStyle = '#444';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // スクロールする白中央線
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    bgOffsetY = (bgOffsetY + currentSpeed) % 50;
+    for (let i = -50; i < canvas.height; i += 50) {
+        ctx.fillRect(canvas.width / 2 - 4, i + bgOffsetY, 8, 30);
+    }
+
+    // ★ 溝と道路の境界線（赤と黄色の縞模様・警戒境界線）
+    drawGutterBorders();
+
+    // 流れてくるアイテム描画
+    fieldItems.forEach(item => {
+        ctx.save();
+        ctx.fillStyle = '#ffeb3b';
+        ctx.beginPath();
+        ctx.arc(item.x + item.w/2, item.y + item.h/2, item.w/2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        let icon = item.name === 'ハイエース' ? '🚗' : item.name === 'りんご' ? '🍎' : '💻';
+        ctx.fillText(icon, item.x + item.w/2, item.y + item.h/2);
+        ctx.restore();
+    });
+
+    // 障害物描画
+    ctx.fillStyle = '#8B4513';
+    obstacles.forEach(obs => {
+        ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+        ctx.strokeStyle = '#3a1e0b';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+    });
+
+    // ★ プレイヤー（熱男：人間デザイン）描画
+    drawAtsuo(player.x, player.y, player.width, player.height);
+}
+
+// 溝と道路の境界線描画関数
+function drawGutterBorders() {
+    const bWidth = 15;
+    // 左境界線
+    for (let y = -50; y < canvas.height + 50; y += 20) {
+        ctx.fillStyle = ((y / 20) % 2 === 0) ? '#ff1744' : '#ffeb3b';
+        ctx.fillRect(0, y + bgOffsetY, bWidth, 20);
+        ctx.fillRect(canvas.width - bWidth, y + bgOffsetY, bWidth, 20);
+    }
+    // くっきり分ける境界線
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bWidth, 0); ctx.lineTo(bWidth, canvas.height);
+    ctx.moveTo(canvas.width - bWidth, 0); ctx.lineTo(canvas.width - bWidth, canvas.height);
+    ctx.stroke();
+}
+
+// 人間キャラクター「熱男」を描画
+function drawAtsuo(x, y, w, h) {
+    ctx.save();
+    
+    // 無敵オーラ
+    if (Date.now() < invincibleEndTime) {
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = `hsl(${frames * 12 % 360}, 100%, 60%)`;
+    }
+
+    let scale = w / player.normalW;
+    
+    // 頭部
+    ctx.fillStyle = '#ffdbac'; // 肌色
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + 10 * scale, 9 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 熱血ハチマキ＆黒髪
+    ctx.fillStyle = '#111'; // 髪
+    ctx.fillRect(x + w / 2 - 9 * scale, y + 1 * scale, 18 * scale, 6 * scale);
+    ctx.fillStyle = '#ff1744'; // 赤ハチマキ
+    ctx.fillRect(x + w / 2 - 10 * scale, y + 5 * scale, 20 * scale, 4 * scale);
+
+    // 熱血な目（キリッとした眉）
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2 * scale;
+    ctx.beginPath();
+    // 左眉
+    ctx.moveTo(x + w / 2 - 7 * scale, y + 8 * scale);
+    ctx.lineTo(x + w / 2 - 2 * scale, y + 10 * scale);
+    // 右眉
+    ctx.moveTo(x + w / 2 + 7 * scale, y + 8 * scale);
+    ctx.lineTo(x + w / 2 + 2 * scale, y + 10 * scale);
+    ctx.stroke();
+
+    // 胴体 (赤い熱血Tシャツ)
+    ctx.fillStyle = '#ff3300';
+    ctx.fillRect(x + w / 2 - 10 * scale, y + 18 * scale, 20 * scale, 18 * scale);
+    
+    // 胸に「熱」の文字
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${10 * scale}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('熱', x + w / 2, y + 27 * scale);
+
+    // 腕（力こぶ）
+    ctx.fillStyle = '#ffdbac';
+    ctx.fillRect(x + w / 2 - 15 * scale, y + 19 * scale, 5 * scale, 12 * scale);
+    ctx.fillRect(x + w / 2 + 10 * scale, y + 19 * scale, 5 * scale, 12 * scale);
+
+    // ズボン (紺色)
+    ctx.fillStyle = '#1a237e';
+    ctx.fillRect(x + w / 2 - 10 * scale, y + 36 * scale, 9 * scale, 14 * scale);
+    ctx.fillRect(x + w / 2 + 1 * scale, y + 36 * scale, 9 * scale, 14 * scale);
+
+    ctx.restore();
+}
+
+function gameOver() {
+    isGameOver = true;
+    isPlaying = false;
+    resultTime.innerText = gameTime;
+    gameOverUI.style.display = 'flex';
+    playSadSound(); // 悲しそうな音楽を再生
+}
+</script>
+</body>
+</html>
